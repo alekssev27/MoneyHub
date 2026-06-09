@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:   # позволяет запускать сборку вручную через кнопку
+  workflow_dispatch:
 
 jobs:
   build:
@@ -15,13 +15,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Устанавливаем Python 3.11 (стабильный, для buildozer)
+      # 2. Устанавливаем Python 3.11
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-            # 3. Устанавливаем системные зависимости для сборки
+      # 3. Устанавливаем системные зависимости
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -39,18 +39,22 @@ jobs:
           pip install buildozer==1.5.0 cython==0.29.36
           pip install git+https://github.com/kivy/python-for-android.git@v2024.01.21
 
-      # 5. Собираем APK (debug-версию)
+      # 5. Принимаем лицензии Android SDK заранее
+      - name: Accept Android SDK licenses
+        run: |
+          yes | sdkmanager --licenses --sdk_root=$ANDROID_SDK_ROOT || true
+          yes | sdkmanager --licenses || true
+
+      # 6. Собираем APK (debug-версию)
       - name: Build APK with buildozer
         run: |
           buildozer android debug
         env:
-          # Убираем предупреждение про Node.js 20
           ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
 
-      # 6. Загружаем готовый APK как артефакт (можно скачать со страницы сборки)
+      # 7. Загружаем готовый APK как артефакт
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: MoneyHub-APK
           path: bin/*.apk
-          if-no-found: warn
