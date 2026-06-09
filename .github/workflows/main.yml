@@ -8,13 +8,13 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -24,51 +24,60 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             git zip unzip openjdk-17-jdk \
-            autoconf automake libtool libltdl-dev \
-            gettext autopoint pkg-config m4 \
+            autoconf automake libtool \
+            pkg-config m4 \
             zlib1g-dev libncurses-dev \
             cmake libffi-dev libssl-dev \
             build-essential ccache
 
-      - name: Install buildozer
+      - name: Install exact versions
         run: |
           python -m pip install --upgrade pip
-          pip install buildozer==1.5.0
+          # КЛЮЧЕВОЕ: старый buildozer + старый p4a = Python 3.11
+          pip install buildozer==1.4.0
+          pip install python-for-android==2023.9.16
           pip install cython==0.29.36
 
-      - name: Clean buildozer cache
+      - name: Verify p4a version
+        run: |
+          python -c "import pythonforandroid; print('p4a version:', pythonforandroid.__version__)"
+          python -c "import buildozer; print('buildozer version:', buildozer.__version__)"
+
+      - name: Clean all caches
         run: |
           rm -rf ~/.buildozer
           rm -rf .buildozer
 
-      - name: Pre-download SDK
+      - name: Force fix buildozer.spec
         run: |
-          buildozer android debug || true
+          # Убеждаемся что spec правильный
+          sed -i 's/^p4a\.branch = .*/# p4a.branch =/' buildozer.spec
+          sed -i 's/^p4a\.fork = .*/# p4a.fork =/' buildozer.spec
+          sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0,kivymd==1.2.0,pillow==10.2.0/' buildozer.spec
+          sed -i 's/^android\.archs = .*/android.archs = arm64-v8a/' buildozer.spec
+          sed -i 's/^android\.ndk = .*/android.ndk = 25b/' buildozer.spec
+          sed -i 's/^android\.api = .*/android.api = 33/' buildozer.spec
+          echo "=== Ключевые строки spec ==="
+          grep -E "requirements|android\.(api|ndk|archs)|p4a\." buildozer.spec
 
-      - name: Accept all SDK licenses
+      - name: Setup Android SDK licenses
         run: |
-          SDK=~/.buildozer/android/platform/android-sdk
-          mkdir -p "$SDK/licenses"
-          echo -e "\n8933bad161af4178b1185d1a37fbf41ea5269c55" > "$SDK/licenses/android-sdk-license"
-          echo -e "\nd56f5187479451eabf01fb78af6dfcb131a6481e" >> "$SDK/licenses/android-sdk-license"
-          echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" >> "$SDK/licenses/android-sdk-license"
-          echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > "$SDK/licenses/android-sdk-preview-license"
-          echo -e "\n504667f4c0de7af1a06de9f4b1727b84351f2910" > "$SDK/licenses/android-sdk-arm-dbt-license"
-
-      - name: Install stable build-tools
-        run: |
-          SDK=~/.buildozer/android/platform/android-sdk
-          CMDTOOLS=$(find $SDK -name sdkmanager -path "*/bin/*" | head -n 1)
-          yes | "$CMDTOOLS" --sdk_root=$SDK "build-tools;33.0.2" "platform-tools" "platforms;android-33" || true
+          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+          echo -e "\n8933bad161af4178b1185d1a37fbf41ea5269c55" \
+            > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo -e "\nd56f5187479451eabf01fb78af6dfcb131a6481e" \
+            >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" \
+            >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
 
       - name: Build APK
         run: |
-          buildozer android debug
-        env:
-          ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+          buildozer android debug 2>&1
+        timeout-minutes: 60
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: MoneyHub-APK
           path: bin/*.apk
+          if-no-files-found: warn
