@@ -2,40 +2,55 @@ name: Build APK
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
+    branches:
+      - main
+  workflow_dispatch:   # позволяет запускать сборку вручную через кнопку
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      # 1. Скачиваем код из репозитория
+      - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. Устанавливаем Python 3.11 (стабильный, для buildozer)
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
+      # 3. Устанавливаем системные зависимости для сборки
       - name: Install system dependencies
         run: |
-          sudo apt update
-          sudo apt install -y \
-            git zip unzip openjdk-17-jdk python3-pip autoconf libtool \
-            pkg-config zlib1g-dev libncurses-dev cmake libffi-dev \
-            libssl-dev build-essential ccache libltdl-dev
+          sudo apt-get update
+          sudo apt-get install -y \
+            git zip unzip openjdk-17-jdk \
+            autoconf libtool pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev \
+            libtinfo5 cmake libffi-dev libssl-dev \
+            build-essential ccache
 
+      # 4. Устанавливаем buildozer и зафиксированный python-for-android
       - name: Install buildozer
         run: |
-          pip install --upgrade pip
-          pip install buildozer cython==0.29.36
+          python -m pip install --upgrade pip
+          pip install buildozer==1.5.0 cython==0.29.36
+          pip install git+https://github.com/kivy/python-for-android.git@v2024.01.21
 
-      - name: Build APK
+      # 5. Собираем APK (debug-версию)
+      - name: Build APK with buildozer
         run: |
-          yes | buildozer android debug
+          buildozer android debug
+        env:
+          # Убираем предупреждение про Node.js 20
+          ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
 
+      # 6. Загружаем готовый APK как артефакт (можно скачать со страницы сборки)
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MoneyHub-apk
+          name: MoneyHub-APK
           path: bin/*.apk
+          if-no-found: warn
