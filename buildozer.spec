@@ -21,6 +21,6 @@ android.sdk = 33
 android.archs = arm64-v8a
 android.accept_sdk_license = True
 
-# КЛЮЧЕВОЕ: фиксируем стабильный p4a
-p4a.branch = develop
+# КЛЮЧЕВОЕ: стабильный РЕЛИЗ p4a (Python 3.11, не develop!)
+p4a.branch = v2024.01.21
 p4a.fork = kivy
