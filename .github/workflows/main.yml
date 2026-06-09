@@ -19,7 +19,6 @@ jobs:
         with:
           python-version: '3.11'
 
-      # Системные зависимости + m4-макросы для libffi
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -37,13 +36,40 @@ jobs:
           pip install buildozer==1.5.0 cython==0.29.36
           pip install git+https://github.com/kivy/python-for-android.git@v2024.01.21
 
-      # Чистим кеш, чтобы не использовался старый NDK r28c
       - name: Clean buildozer cache
         run: |
           rm -rf ~/.buildozer
           rm -rf .buildozer
 
-      - name: Build APK with buildozer
+      # Шаг 1: первый запуск — скачает SDK, упадёт на лицензии (это нормально)
+      - name: Pre-download SDK
+        run: |
+          buildozer android debug || true
+
+      # Шаг 2: записываем ВСЕ хэши лицензий
+      - name: Accept all SDK licenses
+        run: |
+          SDK=~/.buildozer/android/platform/android-sdk
+          mkdir -p "$SDK/licenses"
+          echo -e "\n8933bad161af4178b1185d1a37fbf41ea5269c55" > "$SDK/licenses/android-sdk-license"
+          echo -e "\nd56f5187479451eabf01fb78af6dfcb131a6481e" >> "$SDK/licenses/android-sdk-license"
+          echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" >> "$SDK/licenses/android-sdk-license"
+          echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > "$SDK/licenses/android-sdk-preview-license"
+          echo -e "\n79120722343a6f314e0719f863036c702b0e6b2a" >> "$SDK/licenses/android-sdk-preview-license"
+          echo -e "\n504667f4c0de7af1a06de9f4b1727b84351f2910" > "$SDK/licenses/android-sdk-arm-dbt-license"
+          echo -e "\n859f317696f67ef3d7f30a50a5560e7834b43903" > "$SDK/licenses/android-googletv-license"
+          echo -e "\n33b6a2b64607f11b759f320ef9dff4ae5c47d97a" > "$SDK/licenses/google-gdk-license"
+
+      # Шаг 3: вручную ставим стабильные build-tools 34 + platform-tools
+      - name: Install stable build-tools
+        run: |
+          SDK=~/.buildozer/android/platform/android-sdk
+          CMDTOOLS=$(find $SDK -name sdkmanager -path "*/bin/*" | head -n 1)
+          echo "sdkmanager found: $CMDTOOLS"
+          yes | "$CMDTOOLS" --sdk_root=$SDK "build-tools;34.0.0" "platform-tools" "platforms;android-34" || true
+
+      # Шаг 4: финальная сборка
+      - name: Build APK
         run: |
           buildozer android debug
         env:
