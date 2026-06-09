@@ -22,13 +22,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            git zip unzip openjdk-17-jdk \
-            autoconf automake libtool \
-            pkg-config m4 \
-            zlib1g-dev libncurses-dev \
-            cmake libffi-dev libssl-dev \
-            build-essential ccache wget
+          sudo apt-get install -y git zip unzip openjdk-17-jdk autoconf automake libtool pkg-config m4 zlib1g-dev libncurses-dev cmake libffi-dev libssl-dev build-essential ccache wget
 
       - name: Install Python packages
         run: |
@@ -39,40 +33,11 @@ jobs:
           pip install "python-for-android==2023.9.16" --no-deps
           pip install appdirs colorama jinja2 meson ninja build toml packaging setuptools "wheel==0.43.0"
 
-      - name: Pre-create buildozer directories
+      - name: Pre-create directories
         run: |
           mkdir -p ~/.buildozer/android/platform
           mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
           mkdir -p ~/.buildozer/android/packages
-
-      - name: Pre-download freetype (fix 502 from savannah.gnu.org)
-        run: |
-          PKGS=~/.buildozer/android/packages
-          
-          # freetype 2.14.1
-          echo "Скачиваем freetype..."
-          wget -q --tries=10 --timeout=60 \
-            "https://github.com/freetype/freetype/archive/refs/tags/VER-2-14-1.tar.gz" \
-            -O /tmp/freetype-VER-2-14-1.tar.gz
-          
-          # Проверяем что скачали и переименовываем
-          if [ -f /tmp/freetype-VER-2-14-1.tar.gz ]; then
-            # p4a ищет файл по имени freetype-2.14.1.tar.gz
-            # Но архив с GitHub имеет другую структуру — используем зеркало
-            echo "Пробуем зеркало savannah..."
-            wget -q --tries=10 --timeout=60 \
-              "https://mirror.init7.net/gnu/freetype/freetype-2.14.1.tar.gz" \
-              -O "$PKGS/freetype-2.14.1.tar.gz" || \
-            wget -q --tries=10 --timeout=60 \
-              "https://ftp.gnu.org/gnu/freetype/freetype-2.14.1.tar.gz" \
-              -O "$PKGS/freetype-2.14.1.tar.gz" || \
-            wget -q --tries=10 --timeout=60 \
-              "https://downloads.sourceforge.net/project/freetype/freetype2/2.14.1/freetype-2.14.1.tar.gz" \
-              -O "$PKGS/freetype-2.14.1.tar.gz" || true
-          fi
-          
-          echo "Содержимое packages:"
-          ls -lh "$PKGS/" || echo "Пусто"
 
       - name: Setup Android SDK licenses
         run: |
@@ -81,7 +46,7 @@ jobs:
           printf "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$SDK/licenses/android-sdk-license"
           printf "\n84831b9409646a918e30573bab4c9c91346d8abd" > "$SDK/licenses/android-sdk-preview-license"
 
-      - name: Download and install Android SDK commandline tools
+      - name: Download and install Android SDK
         run: |
           SDK=~/.buildozer/android/platform/android-sdk
           mkdir -p "$SDK/cmdline-tools"
@@ -90,7 +55,6 @@ jobs:
           unzip -q commandlinetools-linux-9477386_latest.zip
           mkdir -p "$SDK/cmdline-tools/latest"
           cp -r cmdline-tools/* "$SDK/cmdline-tools/latest/"
-          export ANDROID_SDK_ROOT=$SDK
           export PATH="$SDK/cmdline-tools/latest/bin:$PATH"
           yes | sdkmanager --sdk_root=$SDK --licenses || true
           sdkmanager --sdk_root=$SDK "platform-tools" "platforms;android-33" "build-tools;33.0.2"
@@ -98,47 +62,39 @@ jobs:
           ln -sf "$SDK/cmdline-tools/latest/bin/sdkmanager" "$SDK/tools/bin/sdkmanager" || true
           ln -sf "$SDK/cmdline-tools/latest/bin/avdmanager" "$SDK/tools/bin/avdmanager" || true
 
-      - name: Download Android NDK 25b
+      - name: Download Android NDK r25b
         run: |
-          NDK_DIR=~/.buildozer/android/platform
           cd /tmp
           wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
-          unzip -q android-ndk-r25b-linux.zip -d "$NDK_DIR/"
-          echo "NDK установлен:"
-          ls "$NDK_DIR/" | grep ndk
+          unzip -q android-ndk-r25b-linux.zip -d ~/.buildozer/android/platform/
+          ls ~/.buildozer/android/platform/ | grep ndk
 
-      - name: Clone p4a stable (Python 3.11)
+      - name: Clone p4a 2023.09.16
         run: |
-          P4A_DIR=~/.buildozer/android/platform/python-for-android
           git clone --depth 1 --branch 2023.09.16 \
             https://github.com/kivy/python-for-android.git \
-            "$P4A_DIR"
-          echo "p4a версия:"
-          cd "$P4A_DIR" && git log --oneline -1
+            ~/.buildozer/android/platform/python-for-android
+          cd ~/.buildozer/android/platform/python-for-android
+          git log --oneline -1
 
-      - name: Patch freetype recipe URL in p4a
+      - name: Patch freetype recipe URL
         run: |
-          P4A_DIR=~/.buildozer/android/platform/python-for-android
-          FREETYPE_RECIPE="$P4A_DIR/pythonforandroid/recipes/freetype/__init__.py"
-          
-          if [ -f "$FREETYPE_RECIPE" ]; then
-            echo "=== Оригинальный рецепт freetype ==="
-            grep -E "url|version" "$FREETYPE_RECIPE" | head -10
-            
-            # Меняем URL на рабочее зеркало
-            sed -i 's|https://download.savannah.gnu.org/releases/freetype/|https://mirror.init7.net/gnu/freetype/|g' "$FREETYPE_RECIPE"
-            
-            echo "=== Пропатченный рецепт freetype ==="
-            grep -E "url|version" "$FREETYPE_RECIPE" | head -10
+          RECIPE=~/.buildozer/android/platform/python-for-android/pythonforandroid/recipes/freetype/__init__.py
+          if [ -f "$RECIPE" ]; then
+            echo "Before patch:"
+            grep -i "savannah\|url" "$RECIPE" | head -5
+            sed -i 's|https://download.savannah.gnu.org/releases/freetype/|https://mirror.init7.net/gnu/freetype/|g' "$RECIPE"
+            echo "After patch:"
+            grep -i "mirror\|url" "$RECIPE" | head -5
           else
-            echo "Рецепт freetype не найден по пути $FREETYPE_RECIPE"
-            find "$P4A_DIR" -name "*.py" | xargs grep -l "savannah" 2>/dev/null | head -5
+            echo "Recipe not found at $RECIPE"
+            find ~/.buildozer/android/platform/python-for-android -name "__init__.py" | xargs grep -l "freetype" 2>/dev/null | head -3
           fi
 
       - name: Create buildozer.spec
         run: |
-          cat > buildozer.spec << 'SPECEOF'
-[app]
+          python3 - << 'PYEOF'
+          content = """[app]
 title = MoneyHub
 package.name = moneyhub
 package.domain = org.alekssev27
@@ -161,13 +117,17 @@ android.accept_sdk_license = True
 android.sdk_path = /home/runner/.buildozer/android/platform/android-sdk
 android.ndk_path = /home/runner/.buildozer/android/platform/android-ndk-r25b
 p4a.source_dir = /home/runner/.buildozer/android/platform/python-for-android
-SPECEOF
-          echo "=== buildozer.spec ==="
-          cat buildozer.spec
+"""
+          with open("buildozer.spec", "w") as f:
+              f.write(content)
+          print("buildozer.spec created successfully")
+          PYEOF
+
+      - name: Show buildozer.spec
+        run: cat buildozer.spec
 
       - name: Build APK
-        run: |
-          buildozer android debug 2>&1
+        run: buildozer android debug 2>&1
         env:
           ANDROID_SDK_ROOT: /home/runner/.buildozer/android/platform/android-sdk
           ANDROID_NDK_ROOT: /home/runner/.buildozer/android/platform/android-ndk-r25b
