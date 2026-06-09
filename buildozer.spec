@@ -61,7 +61,7 @@ android.archs = arm64-v8a
 
 # Разрешения приложения (раскомментируйте нужные)
 # android.permissions = INTERNET
-
+android.build_tools = 34.0.0
 # Принять лицензии SDK автоматически (для CI обязательно)
 android.accept_sdk_license = True
 
