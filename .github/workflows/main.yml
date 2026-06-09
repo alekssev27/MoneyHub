@@ -28,52 +28,117 @@ jobs:
             pkg-config m4 \
             zlib1g-dev libncurses-dev \
             cmake libffi-dev libssl-dev \
-            build-essential ccache
+            build-essential ccache wget
 
-      - name: Install exact versions
+      - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
-          # КЛЮЧЕВОЕ: старый buildozer + старый p4a = Python 3.11
+          pip install "sh==1.14.3"
           pip install buildozer==1.4.0
-          pip install python-for-android==2023.9.16
           pip install cython==0.29.36
+          # Ставим p4a ПОСЛЕ sh чтобы не было конфликта
+          pip install "python-for-android==2023.9.16" --no-deps
+          pip install appdirs colorama jinja2 meson ninja build toml packaging setuptools "wheel==0.43.0"
 
-      - name: Verify p4a version
+      - name: Verify versions
         run: |
-          python -c "import pythonforandroid; print('p4a version:', pythonforandroid.__version__)"
-          python -c "import buildozer; print('buildozer version:', buildozer.__version__)"
+          python -c "import sh; print('sh:', sh.__version__)"
+          python -c "import pythonforandroid; print('p4a:', pythonforandroid.__version__)"
 
-      - name: Clean all caches
+      - name: Pre-create buildozer directories
         run: |
-          rm -rf ~/.buildozer
-          rm -rf .buildozer
-
-      - name: Force fix buildozer.spec
-        run: |
-          # Убеждаемся что spec правильный
-          sed -i 's/^p4a\.branch = .*/# p4a.branch =/' buildozer.spec
-          sed -i 's/^p4a\.fork = .*/# p4a.fork =/' buildozer.spec
-          sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0,kivymd==1.2.0,pillow==10.2.0/' buildozer.spec
-          sed -i 's/^android\.archs = .*/android.archs = arm64-v8a/' buildozer.spec
-          sed -i 's/^android\.ndk = .*/android.ndk = 25b/' buildozer.spec
-          sed -i 's/^android\.api = .*/android.api = 33/' buildozer.spec
-          echo "=== Ключевые строки spec ==="
-          grep -E "requirements|android\.(api|ndk|archs)|p4a\." buildozer.spec
+          mkdir -p ~/.buildozer/android/platform
+          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
 
       - name: Setup Android SDK licenses
         run: |
-          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
-          echo -e "\n8933bad161af4178b1185d1a37fbf41ea5269c55" \
-            > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
-          echo -e "\nd56f5187479451eabf01fb78af6dfcb131a6481e" \
-            >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
-          echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" \
-            >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          SDK=~/.buildozer/android/platform/android-sdk
+          mkdir -p "$SDK/licenses"
+          printf "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$SDK/licenses/android-sdk-license"
+          printf "\n84831b9409646a918e30573bab4c9c91346d8abd" > "$SDK/licenses/android-sdk-preview-license"
+
+      - name: Download and install Android SDK commandline tools
+        run: |
+          SDK=~/.buildozer/android/platform/android-sdk
+          mkdir -p "$SDK/cmdline-tools"
+          cd /tmp
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+          unzip -q commandlinetools-linux-9477386_latest.zip
+          mkdir -p "$SDK/cmdline-tools/latest"
+          cp -r cmdline-tools/* "$SDK/cmdline-tools/latest/"
+          export ANDROID_SDK_ROOT=$SDK
+          export PATH="$SDK/cmdline-tools/latest/bin:$PATH"
+          # Принимаем лицензии и ставим нужное
+          yes | sdkmanager --sdk_root=$SDK --licenses || true
+          sdkmanager --sdk_root=$SDK "platform-tools" "platforms;android-33" "build-tools;33.0.2"
+          # Создаём symlink для совместимости со старым buildozer
+          mkdir -p "$SDK/tools/bin"
+          ln -sf "$SDK/cmdline-tools/latest/bin/sdkmanager" "$SDK/tools/bin/sdkmanager" || true
+          ln -sf "$SDK/cmdline-tools/latest/bin/avdmanager" "$SDK/tools/bin/avdmanager" || true
+          echo "SDK установлен:"
+          ls "$SDK/"
+
+      - name: Download Android NDK 25b
+        run: |
+          NDK_DIR=~/.buildozer/android/platform
+          cd /tmp
+          echo "Скачиваем NDK r25b..."
+          wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
+          echo "Распаковываем NDK r25b..."
+          unzip -q android-ndk-r25b-linux.zip -d "$NDK_DIR/"
+          echo "NDK установлен:"
+          ls "$NDK_DIR/" | grep ndk
+
+      - name: Clone p4a at stable commit (Python 3.11)
+        run: |
+          P4A_DIR=~/.buildozer/android/platform/python-for-android
+          # Клонируем тег 2023.9.16 который использует Python 3.11
+          git clone --depth 1 --branch 2023.09.16 \
+            https://github.com/kivy/python-for-android.git \
+            "$P4A_DIR" || \
+          git clone --depth 1 \
+            https://github.com/kivy/python-for-android.git \
+            "$P4A_DIR"
+          echo "p4a клонирован в $P4A_DIR"
+          ls "$P4A_DIR"
+
+      - name: Fix buildozer.spec
+        run: |
+          cat > buildozer.spec << 'EOF'
+          [app]
+          title = MoneyHub
+          package.name = moneyhub
+          package.domain = org.alekssev27
+          source.dir = .
+          source.include_exts = py,png,jpg,kv,atlas,json,ttf
+          version = 1.0
+          requirements = python3,kivy==2.3.0,kivymd==1.2.0,pillow==10.2.0
+          orientation = portrait
+          fullscreen = 0
+
+          [buildozer]
+          log_level = 2
+          warn_on_root = 0
+
+          android.api = 33
+          android.minapi = 21
+          android.ndk = 25b
+          android.archs = arm64-v8a
+          android.accept_sdk_license = True
+          android.sdk_path = /home/runner/.buildozer/android/platform/android-sdk
+          android.ndk_path = /home/runner/.buildozer/android/platform/android-ndk-r25b
+          p4a.source_dir = /home/runner/.buildozer/android/platform/python-for-android
+          EOF
+          echo "=== buildozer.spec ==="
+          cat buildozer.spec
 
       - name: Build APK
         run: |
           buildozer android debug 2>&1
-        timeout-minutes: 60
+        env:
+          ANDROID_SDK_ROOT: /home/runner/.buildozer/android/platform/android-sdk
+          ANDROID_NDK_ROOT: /home/runner/.buildozer/android/platform/android-ndk-r25b
+        timeout-minutes: 90
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
